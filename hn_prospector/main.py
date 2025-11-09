@@ -118,26 +118,26 @@ def main(
 
     # --- 3. Parse All Comments (Once) ---
     all_comments_by_user: Dict[str, List[str]] = parser.parse_comments_by_user(html_content)
-    user_ids = list(all_comments_by_user.keys())
-    logging.debug(f"List of user_ids: {user_ids}")
+    uids = list(all_comments_by_user.keys())
+    logging.debug(f"List of uids: {uids}")
     console.print(f"Found [bold blue]{len(all_comments_by_user)}[/bold blue] unique commenters.", end=" ")
 
     # --- 4. Filter Users (Concurrently) ---
     token_exist: bool = bool(github_token and github_token.strip())
-    max_workers: int = 20 if token_exist else 1
+    max_workers: int = 10 if token_exist else 1
 
     console.print(f"Filtering users with [bold blue]{max_workers}[/bold blue] concurrent workers...")
     filtered_users: Dict[str, ContactInfo] = {}
 
     with Progress(console=console) as progress:
-        task = progress.add_task("[cyan]Filtering...", total=len(user_ids))
+        task = progress.add_task("[cyan]Filtering...", total=len(uids))
 
         # Use ThreadPoolExecutor for concurrent I/O (network requests)
         with ThreadPoolExecutor(max_workers) as executor:
             # Submit all jobs
             future_to_uid = {
                 executor.submit(filter.process_user, uid, session, token_exist): uid
-                for uid in user_ids
+                for uid in uids
             }
 
             # Process result as they complete
@@ -157,13 +157,13 @@ def main(
     # --- 5. Combine, Rank, and Sort ---
     unranked_users: List[RankedUser] = []
 
-    for user_id, comments in all_comments_by_user.items():
-        if user_id not in filtered_users:
+    for uid, comments in all_comments_by_user.items():
+        if uid not in filtered_users:
             continue
         
-        contact_info = filtered_users[user_id]
+        contact_info = filtered_users[uid]
         user_profile = ranking.build_ranked_user(
-                user_id=user_id,
+                uid=uid,
                 comments=comments,
                 contact_info=contact_info
             )
@@ -197,7 +197,7 @@ def main(
             
         table.add_row(
             str(i + 1),
-            user.user_id,
+            user.uid,
             str(user.comment_count),
             str(user.total_word_count),
             user.contact.status,

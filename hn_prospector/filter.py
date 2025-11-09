@@ -95,7 +95,7 @@ def process_user(uid: str, session: requests.Session, token_exist: bool) -> Opti
     # If we found any interesting signal, return contact card
     if status:
         return ContactInfo(
-            user_id=uid,
+            uid=uid,
             status=status,
             about=clean_about,
             github_repo=github_repo,

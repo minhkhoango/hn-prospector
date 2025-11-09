@@ -10,7 +10,7 @@ from .models import ContactInfo, RankedUser
 
 
 def build_ranked_user(
-    user_id: str,
+    uid: str,
     comments: List[str],
     contact_info: ContactInfo
 ) -> RankedUser:
@@ -23,7 +23,7 @@ def build_ranked_user(
     word_count = sum(len(c.split()) for c in comments)
     
     return RankedUser(
-        user_id=user_id,
+        uid=uid,
         contact=contact_info,
         comments=comments,
         comment_count=comment_count,

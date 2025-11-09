@@ -17,7 +17,7 @@ class ContactInfo:
     """
     Stores the "contact" information for a user.
     """
-    user_id: str
+    uid: str
     status: UserStatus
     about: Optional[str]
     github_repo: Optional[str]
@@ -36,7 +36,7 @@ class MetricsDict(TypedDict):
 
 
 class RankedUserDict(TypedDict):
-    user_id: str
+    uid: str
     contact: ContactDict
     metrics: MetricsDict
     comments: List[str]
@@ -47,7 +47,7 @@ class RankedUser:
     """
     The final, combined data structure for an output-ready user.
     """
-    user_id: str
+    uid: str
     contact: ContactInfo
     comments: List[str]
     comment_count: int
@@ -56,7 +56,7 @@ class RankedUser:
     def to_dict(self) -> RankedUserDict:
         """Converts the object to a dictionary for JSON serialization."""
         return {
-            "user_id": self.user_id,
+            "uid": self.uid,
             "contact": {
                 "about": self.contact.about,
                 "github_repo": self.contact.github_repo,
