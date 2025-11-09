@@ -40,7 +40,7 @@ INTERESTING_PATTERNS = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
+def process_user(uid: str, session: requests.Session, token_exist: bool) -> Optional[ContactInfo]:
     """
     Processes a single user ID to see if they are "interesting."
     Args:
@@ -51,7 +51,6 @@ def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
         A ContactInfo object if the user is interesting, else None.
     """
 
-    logging.debug(f"Processing user {uid}")
     user_data = hn_client.get_hn_user_info(uid, session)
     if not user_data:
         logging.info(f"User {uid}: no data returned from HN API")
@@ -80,7 +79,7 @@ def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
         logging.debug(f"User {uid}: no about section")
 
     # Always check GitHub profile as a secondary signal. 
-    exists = hn_client.check_github_profile(uid, session)
+    exists = hn_client.check_github_profile(uid, session, token_exist)
 
     if exists:
         github_repo = f"{hn_client.GITHUB_URL}/{uid}"
@@ -89,6 +88,9 @@ def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
             logging.info(f"User {uid}: github profile found, marking as GITHUB_ONLY")
         else:
             logging.info(f"User {uid}: both about and github present; preferring about status={status}")
+    
+    if not exists and not status:
+        logging.info(f"User {uid}: both about and github not found; skipping user")
 
     # If we found any interesting signal, return contact card
     if status:
@@ -99,5 +101,4 @@ def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
             github_repo=github_repo,
         )
 
-    logging.debug(f"User {uid}: no interesting signals found (about/GitHub)")
     return None

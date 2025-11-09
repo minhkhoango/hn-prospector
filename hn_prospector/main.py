@@ -9,6 +9,8 @@ import typer
 import re
 import json
 import sys
+import os
+from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from typing import List, Dict, Optional
@@ -20,8 +22,10 @@ from . import hn_client, parser, filter, ranking
 from .models import ContactInfo, RankedUser
 
 
+load_dotenv()
+
 logging.basicConfig(
-    level=logging.DEBUG,  # Set the minimum level for messages to be processed
+    level=logging.INFO,  # Set the minimum level for messages to be processed
     format='%(asctime)s - %(levelname)s - %(message)s', # Define the log message format
     datefmt='%Y-%m-%d %H:%M:%S', # Define the date/time format
     filename='app.log', # Specify a filde to log to
@@ -58,18 +62,6 @@ def main(
         None,
         help="The Hacker News thread ID or full URL. If not provided, you will be prompted."
     ),
-    output_file: str = typer.Option(
-        "hn_prospects.json",
-        "--out",
-        "-o",
-        help="The JSON file to save results to. [default: hn_prospects.json]"
-    ),
-    max_workers: Optional[int] = typer.Option(
-        None,
-        "--workers",
-        "-w",
-        help="Number of concurrent workers for API calls. [default: 10]"
-    )
 ):
     """
     Analyzes a Hacker News thread to find and rank interesting users.
@@ -80,11 +72,18 @@ def main(
     if not thread_input:
         thread_input = typer.prompt("Please enter the HN Thread ID or URL")
     
-    if max_workers is None:
-        max_workers = typer.prompt(
-            "Enter number of concurrent workers",
-            type=int,
-            default=1
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token:
+        github_token = typer.prompt(
+            "Enter your github token (recommended)",
+            type=str,
+            default="",
+            show_default=False
+        )
+    if not github_token:
+        console.print(f"[bold yellow]No github token found[/bold yellow], attempting web scraping")
+        logging.warning(
+            "No GITHUB_TOKEN env found. GitHub API requests will be rate-limited. Attempt web scraping"
         )
 
     # --- 1. Get Thread ID ---
@@ -95,10 +94,8 @@ def main(
         )
         raise typer.Exit(code=1)
     
-    console.print(f"Processing HN Thread ID: [bold yellow]{thread_id}[/bold yellow]")
-
     # Create a single, resilient session for all requests
-    session = hn_client.get_session()
+    session = hn_client.get_session(github_token)
 
     # --- 2. Fetch and Confirm Thread ---
     html_content = hn_client.get_thread_html(thread_id, session)
@@ -120,13 +117,15 @@ def main(
         sys.exit(0)
 
     # --- 3. Parse All Comments (Once) ---
-    console.print("Parsing all comments...")
     all_comments_by_user: Dict[str, List[str]] = parser.parse_comments_by_user(html_content)
     user_ids = list(all_comments_by_user.keys())
     logging.debug(f"List of user_ids: {user_ids}")
     console.print(f"Found [bold blue]{len(all_comments_by_user)}[/bold blue] unique commenters.", end=" ")
 
     # --- 4. Filter Users (Concurrently) ---
+    token_exist: bool = bool(github_token and github_token.strip())
+    max_workers: int = 20 if token_exist else 1
+
     console.print(f"Filtering users with [bold blue]{max_workers}[/bold blue] concurrent workers...")
     filtered_users: Dict[str, ContactInfo] = {}
 
@@ -137,7 +136,7 @@ def main(
         with ThreadPoolExecutor(max_workers) as executor:
             # Submit all jobs
             future_to_uid = {
-                executor.submit(filter.process_user, uid, session): uid
+                executor.submit(filter.process_user, uid, session, token_exist): uid
                 for uid in user_ids
             }
 
@@ -173,6 +172,7 @@ def main(
     final_ranked_list = ranking.sort_users(unranked_users)
 
     # --- 6. Output Results ---
+    output_file = "hn_prospects.json"
     console.print(f"Saving results to [bold yellow]{output_file}[/bold yellow]...")
     output_data = [user.to_dict() for user in final_ranked_list]
     try:
