@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress
@@ -105,6 +105,10 @@ def main(
         )
         raise typer.Exit(code=1)
 
+    # DEBUGGING
+    with open('fetched_thread.html', 'w', encoding='utf-8') as f:
+        f.write(html_content)
+        
     thread_title = hn_client.get_thread_title(html_content)
     console.print(f"Thread Title: [bold green]'{thread_title}'[/bold green]")
 
@@ -117,7 +121,7 @@ def main(
         sys.exit(0)
 
     # --- 3. Parse All Comments (Once) ---
-    all_comments_by_user: Dict[str, List[str]] = parser.parse_comments_by_user(html_content)
+    all_comments_by_user: Dict[str, List[Tuple[str, str]]] = parser.parse_comments_by_user(html_content)
     uids = list(all_comments_by_user.keys())
     logging.debug(f"List of uids: {uids}")
     console.print(f"Found [bold blue]{len(all_comments_by_user)}[/bold blue] unique commenters.", end=" ")

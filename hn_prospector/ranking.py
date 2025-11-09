@@ -4,14 +4,14 @@ Handles the business logic for processing and ranking users.
 This keeps the main.py file clean and focused on orchestration.
 """
 
-from typing import List
+from typing import List, Tuple
 
 from .models import ContactInfo, RankedUser
 
 
 def build_ranked_user(
     uid: str,
-    comments: List[str],
+    comments: List[Tuple[str, str]],
     contact_info: ContactInfo
 ) -> RankedUser:
     """
@@ -20,7 +20,7 @@ def build_ranked_user(
     This encapsulates the logic for calculating metrics.
     """
     comment_count = len(comments)
-    word_count = sum(len(c.split()) for c in comments)
+    word_count = sum(len(user_comment.split()) for _, user_comment in comments)
     
     return RankedUser(
         uid=uid,

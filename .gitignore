@@ -3,3 +3,4 @@ __pycache__/
 app.log
 hn_prospects.json
 .env
+fetched_thread.html
