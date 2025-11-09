@@ -6,6 +6,7 @@ Refactored from the user-provided quick_filter.py.
 
 import requests
 from typing import Optional
+import logging
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 import re
 import warnings
@@ -50,39 +51,53 @@ def process_user(uid: str, session: requests.Session) -> Optional[ContactInfo]:
         A ContactInfo object if the user is interesting, else None.
     """
 
+    logging.debug(f"Processing user {uid}")
     user_data = hn_client.get_hn_user_info(uid, session)
     if not user_data:
+        logging.info(f"User {uid}: no data returned from HN API")
         return None
     
     about_html: str = user_data.get("about", "")
     clean_about: Optional[str] = None
     status: Optional[UserStatus] = None
 
+    # Parse HTML for clean text if present
+    github_repo: Optional[str] = None
     if about_html:
-        # Parse HTML for clean taxt
         soup = BeautifulSoup(about_html, 'html.parser')
         about_text = soup.get_text(strip=True)
+        logging.debug(f"User {uid}: about text extracted (len={len(about_text)})")
 
         # Check if the 'about' text contains anything interesting
         if INTERESTING_PATTERNS.search(about_text):
             clean_about = about_text
             status = "YES"
+            logging.info(f"User {uid}: about section is interesting")
+        else:
+            logging.info(f"User {uid}: about section not interesting")
 
-        # If 'about' wasn't interesting, check for Github
-        github_repo: Optional[str] = None
+    else:
+        logging.debug(f"User {uid}: no about section")
+
+    # Always check GitHub profile as a secondary signal. 
+    exists = hn_client.check_github_profile(uid, session)
+
+    if exists:
+        github_repo = f"{hn_client.GITHUB_URL}/{uid}"
         if not status:
-            if hn_client.check_github_profile(uid, session):
-                github_repo = f"{hn_client.GITHUB_URL}/{uid}"
-                status = "GITHUB_ONLY"
-        
-        # If we found anything, return contact card
-        if status:
-            return ContactInfo(
-                user_id=uid,
-                status=status,
-                about=clean_about,
-                github_repo=github_repo
-            )
+            status = "GITHUB_ONLY"
+            logging.info(f"User {uid}: github profile found, marking as GITHUB_ONLY")
+        else:
+            logging.info(f"User {uid}: both about and github present; preferring about status={status}")
 
-        # User is not interesting
-        return None
+    # If we found any interesting signal, return contact card
+    if status:
+        return ContactInfo(
+            user_id=uid,
+            status=status,
+            about=clean_about,
+            github_repo=github_repo,
+        )
+
+    logging.debug(f"User {uid}: no interesting signals found (about/GitHub)")
+    return None

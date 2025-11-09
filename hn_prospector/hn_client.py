@@ -9,15 +9,8 @@ from requests.adapters import HTTPAdapter, Retry
 from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup
 import logging
+import time
 
-
-logging.basicConfig(
-    level=logging.INFO,  # Set the minimum level for messages to be processed
-    format='%(asctime)s - %(levelname)s - %(message)s', # Define the log message format
-    datefmt='%Y-%m-%d %H:%M:%S', # Define the date/time format
-    filename='app.log', # Specify a filde to log to
-    filemode='a' # Append to the file if it exists
-)
 
 # Very important for scraping
 HEADERS = {
@@ -83,11 +76,18 @@ def get_hn_user_info(uid: str, session: requests.Session) -> Optional[Dict[str, 
         return None
     
 def check_github_profile(uid: str, session: requests.Session) -> bool:
-    """Checks if a GitHub profile exists for a given username (HTTP 200)."""
+    """Checks if a GitHub profile exists for a given username.
+
+    Returns a tuple (exists: bool, status_code: Optional[int]).
+    status_code is None when a network error occurred.
+    """
     try:
         url = f"{GITHUB_URL}/{uid}"
         # Only care about the headers, no need to download the body
         response = session.head(url, timeout=3, allow_redirects=True)
+        time.sleep(2)  # be nice to github
+        logging.info(f"Checked github profile for {uid} -> {url}, response code is {response.status_code}")
         return response.status_code == 200
-    except requests.RequestException:
+    except requests.RequestException as e:
+        logging.warning(f"Error checking github profile for {uid}: {e}")
         return False

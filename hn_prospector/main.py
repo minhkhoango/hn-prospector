@@ -10,6 +10,7 @@ import re
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 from typing import List, Dict, Optional
 from rich.console import Console
 from rich.table import Table
@@ -18,6 +19,14 @@ from rich.progress import Progress
 from . import hn_client, parser, filter, ranking
 from .models import ContactInfo, RankedUser
 
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Set the minimum level for messages to be processed
+    format='%(asctime)s - %(levelname)s - %(message)s', # Define the log message format
+    datefmt='%Y-%m-%d %H:%M:%S', # Define the date/time format
+    filename='app.log', # Specify a filde to log to
+    filemode='a' # Append to the file if it exists
+)
 
 app = typer.Typer(
     help="A CLI tool to find and rank interesting users from a Hacker News thread."
@@ -75,7 +84,7 @@ def main(
         max_workers = typer.prompt(
             "Enter number of concurrent workers",
             type=int,
-            default=3
+            default=1
         )
 
     # --- 1. Get Thread ID ---
@@ -114,6 +123,7 @@ def main(
     console.print("Parsing all comments...")
     all_comments_by_user: Dict[str, List[str]] = parser.parse_comments_by_user(html_content)
     user_ids = list(all_comments_by_user.keys())
+    logging.debug(f"List of user_ids: {user_ids}")
     console.print(f"Found [bold blue]{len(all_comments_by_user)}[/bold blue] unique commenters.", end=" ")
 
     # --- 4. Filter Users (Concurrently) ---
