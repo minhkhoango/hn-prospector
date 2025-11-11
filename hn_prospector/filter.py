@@ -1,7 +1,5 @@
 """
 User filtering and contact info extraction logic.
-
-Refactored from the user-provided quick_filter.py.
 """
 
 import requests
@@ -40,7 +38,12 @@ INTERESTING_PATTERNS = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-def process_user(uid: str, session: requests.Session, token_exist: bool) -> Optional[ContactInfo]:
+def process_user(
+    uid: str, 
+    session: requests.Session, 
+    token_exist: bool,
+    min_repo_count: int
+) -> Optional[ContactInfo]:
     """
     Processes a single user ID to see if they are "interesting."
     Args:
@@ -53,7 +56,7 @@ def process_user(uid: str, session: requests.Session, token_exist: bool) -> Opti
 
     user_data = hn_client.get_hn_user_info(uid, session)
     if not user_data:
-        logging.info(f"User {uid}: no data returned from HN API")
+        logging.info(f"{uid}: no data returned from HN API")
         return None
     
     about_html: str = user_data.get("about", "")
@@ -65,33 +68,56 @@ def process_user(uid: str, session: requests.Session, token_exist: bool) -> Opti
     if about_html:
         soup = BeautifulSoup(about_html, 'html.parser')
         about_text = soup.get_text(strip=True)
-        logging.debug(f"User {uid}: about text extracted (len={len(about_text)})")
+        logging.debug(f"{uid}: about text extracted (len={len(about_text)})")
 
         # Check if the 'about' text contains anything interesting
         if INTERESTING_PATTERNS.search(about_text):
             clean_about = about_text
             status = "YES"
-            logging.info(f"User {uid}: about section is interesting")
+            logging.info(f"{uid}: about section is interesting")
         else:
-            logging.info(f"User {uid}: about section not interesting")
+            logging.info(f"{uid}: about section not interesting")
 
     else:
-        logging.debug(f"User {uid}: no about section")
+        logging.debug(f"{uid}: no about section")
 
-    # Always check GitHub profile as a secondary signal. 
-    exists = hn_client.check_github_profile(uid, session, token_exist)
+    # --- GitHub Profile Check ---
+    github_repo: Optional[str] = None
+    github_profile_is_valid: bool = False
 
-    if exists:
+    if token_exist:
+        # Use the efficient GraphQL API
+        try:
+            exists, repo_count = hn_client.get_github_profile_stats_api(uid, session)
+
+            if exists and repo_count >= min_repo_count:
+                github_profile_is_valid = True
+                logging.info(f"User {uid}: GitHub profile is valid with {repo_count} public repos.")
+            elif exists:
+                logging.info(f"User {uid}: GitHub profile found but only {repo_count} public repos. Skipping profile.")
+            else:
+                pass
+        except requests.RequestException as e:
+            logging.warning(f"Error checking GitHub API for {uid}: {e}")
+            github_profile_is_valid = False
+    else:
+        # Web scraping mode (no token), just check for existence
+        logging.info(f"{uid}: No GitHub token. Falling back to web scrape check.")
+        github_profile_is_valid = hn_client.check_github_profile_scrape(uid, session)
+
+    # --- Combine and Decide ---
+    if github_profile_is_valid:
         github_repo = f"{hn_client.GITHUB_URL}/{uid}"
         if not status:
             status = "GITHUB_ONLY"
-            logging.info(f"User {uid}: github profile found, marking as GITHUB_ONLY")
+            logging.info(f"{uid}: Valid github profile found, marking as GITHUB_ONLY")
         else:
-            logging.info(f"User {uid}: both about and github present; preferring about status={status}")
-    
-    if not exists and not status:
-        logging.info(f"User {uid}: both about and github not found; skipping user")
+            logging.info(f"{uid}: both about and vaild github present; preferring status={status}")
 
+    if not github_profile_is_valid and not status:
+        logging.info(f"User {uid}: No interesting about section and no valid github profile; skipping user")
+        return None
+    
     # If we found any interesting signal, return contact card
     if status:
         return ContactInfo(

@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, cast
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress
@@ -36,6 +36,7 @@ app = typer.Typer(
     help="A CLI tool to find and rank interesting users from a Hacker News thread."
 )
 console = Console(stderr=True)
+API_MAX_WORKERS: int = 10
 
 def _extract_thread_id(thread_input: str | None) -> Optional[str]:
     """Extracts the thread ID from a URL or a direct ID string."""
@@ -62,6 +63,11 @@ def main(
         None,
         help="The Hacker News thread ID or full URL. If not provided, you will be prompted."
     ),
+    min_repo_count: Optional[int] = typer.Option(
+        None, 
+        "--min-repo-count", 
+        help="Minimum number of repositories required for a user to be considered interesting."
+    ),
 ):
     """
     Analyzes a Hacker News thread to find and rank interesting users.
@@ -85,6 +91,11 @@ def main(
         logging.warning(
             "No GITHUB_TOKEN env found. GitHub API requests will be rate-limited. Attempt web scraping"
         )
+
+    if min_repo_count is None:
+        min_repo_count = typer.prompt("Enter minimum repo count", type=int, default=0)
+
+    min_repo_count = cast(int, min_repo_count)
 
     # --- 1. Get Thread ID ---
     thread_id = _extract_thread_id(thread_input)
@@ -128,7 +139,7 @@ def main(
 
     # --- 4. Filter Users (Concurrently) ---
     token_exist: bool = bool(github_token and github_token.strip())
-    max_workers: int = 10 if token_exist else 1
+    max_workers: int = API_MAX_WORKERS if token_exist else 1
 
     console.print(f"Filtering users with [bold blue]{max_workers}[/bold blue] concurrent workers...")
     filtered_users: Dict[str, ContactInfo] = {}
@@ -140,8 +151,13 @@ def main(
         with ThreadPoolExecutor(max_workers) as executor:
             # Submit all jobs
             future_to_uid = {
-                executor.submit(filter.process_user, uid, session, token_exist): uid
-                for uid in uids
+                executor.submit(
+                    filter.process_user, 
+                    uid, 
+                    session, 
+                    token_exist,
+                    min_repo_count
+                ): uid for uid in uids
             }
 
             # Process result as they complete
